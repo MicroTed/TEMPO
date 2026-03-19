@@ -103,7 +103,7 @@ module module_mp_tempo_params
   real(wp), parameter :: aero_max = 9999.e6_wp !! maximum aerosol value
   real(wp), parameter :: hgfrz = 235.16_wp !! temperature to freeze all liquid \([K]\)
   real(wp), parameter :: nt_c_o = 50.e6_wp !! cloud number concentration over ocean (non-aerosol aware) \([m^{-3}]\)
-  real(wp), parameter :: nt_c_l = 1900.e6_wp !! cloud number concentration over land (non-aerosol aware) \([m^{-3}]\)
+  real(wp), parameter :: nt_c_l = 100.e6_wp !! cloud number concentration over land (non-aerosol aware) \([m^{-3}]\)
   real(wp), parameter :: nt_c_max = 1999.e6_wp !! maximum cloud number concentration \([m^{-3}]\)
   real(wp), parameter :: nt_c_min = 2._wp !! minimum cloud number concentration \([m^{-3}]\)
 

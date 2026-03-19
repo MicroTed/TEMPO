@@ -2619,9 +2619,6 @@ module module_mp_tempo_main
     lam_exp = lamg * (cgg(3,1)*ogg2*ogg1)**bm_g
     n0_exp = ogg1*rg/am_g(idx) * lam_exp**cge(1,1)
     nig = nint(log10(real(n0_exp, kind=dp)))
-    IF ( .not. ( -100 < nig .and. nig < 100 ) ) THEN
-      write(0,*) 'nig = ', nig,n0_exp,rg,lam_exp,ilamg
-    ENDIF
     do_loop_ng: do nn = nig-1, nig+1
       n = nn
       if ( (n0_exp/10._wp**nn) >= 1._wp .and. (n0_exp/10._wp**nn) < 10._wp) exit do_loop_ng
