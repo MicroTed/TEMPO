@@ -1,7 +1,7 @@
 module module_mp_tempo_main
   !! main tempo microphysics code
   use module_mp_tempo_cfgs, only : ty_tempo_cfgs
-  use module_mp_tempo_params, only : wp, sp, dp, &
+  use module_mp_tempo_params, only : wp, sp, dp, pi, consg1, consr1, &
     min_qv, roverrv, rdry, r1, r2, nt_c_max, t0, nrhg, rho_g, &
     meters3_to_liters, eps, aero_max, nwfa_default, nifa_default
   use module_mp_tempo_utils, only : get_nuc, get_constant_cloud_number, snow_moments, calc_rslf, calc_rsif
@@ -117,7 +117,7 @@ module module_mp_tempo_main
     real(wp), dimension(:), intent(in), optional :: thten_swrad1d !! potential temperature tendency from shortwave radiation scheme
   
     real(wp), dimension(kts:kte) :: tten, qvten, qcten, qiten, qrten, qsten, &
-      qgten, qbten, niten, nrten, ncten, ngten, nwfaten, nifaten !! tendencies
+      qgten, qbten, niten, nrten, ncten, ngten, nwfaten, nifaten, zgten,zrten !! tendencies
 
     logical, dimension(kts:kte) :: l_qc, l_qi, l_qr, l_qs, l_qg !! hydrometeor existence logicals
     integer, dimension(kts:kte) :: idx_bg !! graupel density index
@@ -131,6 +131,7 @@ module module_mp_tempo_main
  
     real(wp), dimension(kts:kte) :: rc, ri, rr, rs, rg, rb !! local microphysical variables
     real(wp), dimension(kts:kte) :: ni, nr, nc, ng, nwfa, nifa !! local microphysics variables
+    real(wp), dimension(kts:kte) :: nrtmp, ngtmp, zr, zg !! local microphysical variables
 
     real(dp), dimension(kts:kte) :: ilamc, ilami, ilamr, ilamg !! inverse lambda
     real(wp), dimension(kts:kte) :: mvd_r, mvd_c, mvd_g !! median volume diameter
@@ -140,6 +141,7 @@ module module_mp_tempo_main
     real(wp), dimension(:), allocatable :: xncx, xngx, xqbx, ncsave !! temporary arrays
 
     real(wp), dimension(kts:kte+1) :: vtrr, vtnr, vtrs, vtri, vtni, vtrg, vtng, vtrc, vtnc !! fallspeeds
+    real(wp), dimension(kts:kte+1) :: vtzr, vtzg
     real(wp), dimension(kts:kte) :: vtboost !! snow fallspeed boost factor
     integer :: substeps_sedi, ktop_sedi, n !! sedimentation substepping variables
     real(wp) :: semi_sedi_factor !! semi-lagrangian sedimentation factor
@@ -279,6 +281,8 @@ module module_mp_tempo_main
       vtnc(k) = 0._wp
       vtrg(k) = 0._wp
       vtng(k) = 0._wp
+      vtzr(k) = 0._wp
+      vtzg(k) = 0._wp
     enddo
   
     ! initialization -----------------------------------------------------------------------------
@@ -327,6 +331,7 @@ module module_mp_tempo_main
       else
         ! single modment constant value
         call get_cloud_number(nc=nc)
+        nc = nc*rho
       endif
       allocate(ncsave(nz), source=nc)
     endif
@@ -364,6 +369,14 @@ module module_mp_tempo_main
       supersaturated)
 
     if (first_call_main) first_call_main = .false.
+
+    ! sedimentation ------------------------------------------------------------------------------
+    tempo_main_diags%rain_precip = 0._wp
+    tempo_main_diags%cloud_precip = 0._wp
+    tempo_main_diags%ice_liquid_equiv_precip = 0._wp
+    tempo_main_diags%snow_liquid_equiv_precip = 0._wp
+    tempo_main_diags%graupel_liquid_equiv_precip = 0._wp
+    tempo_main_diags%frz_rain_precip = 0._wp
 
     ! check for hydrometeors or supersaturation --------------------------------------------------
     do_micro = any(l_qc) .or. any(l_qr) .or. any(l_qi) .or. any(l_qs) .or. any(l_qg)
@@ -549,7 +562,8 @@ module module_mp_tempo_main
     semi_sedi_factor = 10._wp
     if (any(l_qr)) then
       call rain_fallspeed(rhof=rhof, l_qr=l_qr, rr=rr, ilamr=ilamr, dz1d=dz1d, &
-        vt=vtrr, vtn=vtnr, substeps_sedi=substeps_sedi, ktop_sedi=ktop_sedi)
+        vt=vtrr, vtn=vtnr, vtz=vtzr, substeps_sedi=substeps_sedi, ktop_sedi=ktop_sedi, &
+        ssflg=tempo_cfgs%rssflg)
 
       if (tempo_cfgs%semi_sedi_flag) then
         substeps_sedi = max(int(substeps_sedi/semi_sedi_factor) + 1, 1)
@@ -564,21 +578,55 @@ module module_mp_tempo_main
           xnx = nr1d
           call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r) 
           call rain_fallspeed(rhof=rhof, l_qr=l_qr, rr=rr, ilamr=ilamr, dz1d=dz1d, &
-            vt=vtrr, vtn=vtnr)
+            vt=vtrr, vtn=vtnr, vtz=vtzr, ssflg=tempo_cfgs%rssflg)
         enddo 
       else
+          IF ( tempo_cfgs%rssflg >= 2 ) THEN
+           ! temporary reflectivity moment; rg is mass content and ng is number per m**3
+            DO k = 1,nz
+              IF ( rr(k) > r1 .and. nr(k) > r2 ) THEN
+              zr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*nr(k))
+              ELSE
+              zr(k) = 0.
+              ENDIF
+            ENDDO
+          ENDIF
         do n = 1, substeps_sedi
+          IF ( tempo_cfgs%rssflg >= 2 ) THEN
+           ! temporary reflectivity moment; rg is mass content and ng is number per m**3
+            DO k = 1,nz
+              nrtmp(k) = nr(k)
+            ENDDO
+          ENDIF
           call sedimentation(xr=rr, vt=vtrr, dz1d=dz1d, rho=rho, xten=qrten, limit=r1, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%rain_precip)
-          call sedimentation(xr=nr, vt=vtnr, dz1d=dz1d, rho=rho, xten=nrten, limit=r2, &
-            steps=substeps_sedi, ktop_sedi=ktop_sedi)                 
+          IF ( tempo_cfgs%rssflg < 2 ) THEN
+           call sedimentation(xr=nr, vt=vtnr, dz1d=dz1d, rho=rho, xten=nrten, limit=r2, &
+             steps=substeps_sedi, ktop_sedi=ktop_sedi)
+          ELSEIF ( tempo_cfgs%rssflg >= 2 ) THEN
+          ! pseudo 3M sedimentation
+          call sedimentation(xr=zr, vt=vtzr, dz1d=dz1d, rho=rho, xten=zrten, limit=1.e-30, &
+            steps=substeps_sedi, ktop_sedi=ktop_sedi)
+          
+           ! diagnose new Nr from rr and zr
+            DO k = 1,nz
+              IF ( rr(k) > r1 .and. zr(k) > 1.e-30 ) THEN
+              nr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*zr(k))
+              ELSE
+              nr(k) = 0.
+              ENDIF
+              nrten(k) =  nrten(k) + (nr(k) - nrtmp(k))*substeps_sedi/(rho(k)*dt) ! tendency in #/kg; ng in #/m**3
+            ENDDO
+          
+          ENDIF
           vtrr = 0._wp
           vtnr = 0._wp
+          vtzr = 0._wp
           xrx = qr1d
           xnx = nr1d
           call rain_check_and_update(rho, l_qr, xrx, xnx, rr, nr, qrten, nrten, ilamr, mvd_r) 
           call rain_fallspeed(rhof=rhof, l_qr=l_qr, rr=rr, ilamr=ilamr, dz1d=dz1d, &
-            vt=vtrr, vtn=vtnr)
+            vt=vtrr, vtn=vtnr, vtz=vtzr, ssflg=tempo_cfgs%rssflg)
         enddo
       endif 
     endif
@@ -589,8 +637,9 @@ module module_mp_tempo_main
     semi_sedi_factor = 10._wp
     if (any(l_qg)) then
       call graupel_fallspeed(rhof=rhof, rho=rho, visco=visco, &
-        l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
-        vt=vtrg, vtn=vtng, substeps_sedi=substeps_sedi, ktop_sedi=ktop_sedi)
+        l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, zg=zg, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
+        vt=vtrg, vtn=vtng, vtz=vtzg, substeps_sedi=substeps_sedi, ktop_sedi=ktop_sedi, &
+        igrfallopt=tempo_cfgs%igrfallopt, ssflg=tempo_cfgs%hssflg)
 
       if (tempo_cfgs%semi_sedi_flag) then 
         substeps_sedi = max(int(substeps_sedi/semi_sedi_factor) + 1, 1)
@@ -614,19 +663,53 @@ module module_mp_tempo_main
             qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
             qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
           call graupel_fallspeed(rhof=rhof, rho=rho, visco=visco, &
-            l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
-            vt=vtrg, vtn=vtng)
+            l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, zg=zg, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
+            vt=vtrg, vtn=vtng, vtz=vtzg,igrfallopt=tempo_cfgs%igrfallopt, ssflg=tempo_cfgs%hssflg)
         enddo 
       else
+          IF (tempo_cfgs%hssflg >= 2 ) THEN
+           ! temporary reflectivity moment; rg is mass content and ng is number per m**3
+            DO k = 1,nz
+              IF ( rg(k) > r1 .and. ng(k) > r2 ) THEN
+              zg(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*ng(k))
+              ELSE
+              zg(k) = 0.
+              ENDIF
+            ENDDO
+          ENDIF
         do n = 1, substeps_sedi
+          IF (tempo_cfgs%hssflg >= 2 ) THEN
+           ! temporary reflectivity moment; rg is mass content and ng is number per m**3
+            DO k = 1,nz
+              ngtmp(k) = ng(k)
+            ENDDO
+          ENDIF
           call sedimentation(xr=rg, vt=vtrg, dz1d=dz1d, rho=rho, xten=qgten, limit=r1, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%graupel_liquid_equiv_precip)
-          call sedimentation(xr=ng, vt=vtng, dz1d=dz1d, rho=rho, xten=ngten, limit=r2, &
-            steps=substeps_sedi, ktop_sedi=ktop_sedi)
           call sedimentation(xr=rb, vt=vtrg, dz1d=dz1d, rho=rho, xten=qbten, &
             limit=meters3_to_liters*r1/rho_g(nrhg), steps=substeps_sedi, ktop_sedi=ktop_sedi)
+          IF ( tempo_cfgs%hssflg < 2 ) THEN
+          call sedimentation(xr=ng, vt=vtng, dz1d=dz1d, rho=rho, xten=ngten, limit=r2, &
+            steps=substeps_sedi, ktop_sedi=ktop_sedi)
+          ELSEIF ( tempo_cfgs%hssflg >= 2 ) THEN
+          ! pseudo 3M sedimentation
+          call sedimentation(xr=zg, vt=vtzg, dz1d=dz1d, rho=rho, xten=zgten, limit=1.e-30, &
+            steps=substeps_sedi, ktop_sedi=ktop_sedi)
+          
+           ! diagnose new Ng from rg and zg
+            DO k = 1,nz
+              IF ( rg(k) > r1 .and. zg(k) > 1.e-30 ) THEN
+              ng(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*zg(k))
+              ELSE
+              ng(k) = 0.
+              ENDIF
+              ngten(k) =  ngten(k) + (ng(k) - ngtmp(k))*substeps_sedi/(rho(k)*dt)
+            ENDDO
+          
+          ENDIF
           vtrg = 0._wp
           vtng = 0._wp
+          vtzg = 0._wp
           xrx = qg1d
           if (present(ng1d) .and. present(qb1d)) then
             if (.not. allocated(xngx)) allocate(xngx(nz), source=0._wp)
@@ -638,8 +721,8 @@ module module_mp_tempo_main
             qb1d=xqbx, rg=rg, ng=ng, rb=rb, idx=idx_bg, qgten=qgten, ngten=ngten, &
             qbten=qbten, ilamg=ilamg, mvd_g=mvd_g)
           call graupel_fallspeed(rhof=rhof, rho=rho, visco=visco, &
-            l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
-            vt=vtrg, vtn=vtng)
+            l_qg=l_qg, rg=rg, rb=rb, qb1d=qb1d, zg=zg, idx=idx_bg, ilamg=ilamg, dz1d=dz1d, &
+            vt=vtrg, vtn=vtng, vtz=vtzg, igrfallopt=tempo_cfgs%igrfallopt, ssflg=tempo_cfgs%hssflg)
         enddo
       endif 
     endif
@@ -1690,16 +1773,18 @@ module module_mp_tempo_main
   end subroutine semilagrangian_sedimentation
 
 
-  subroutine rain_fallspeed(rhof, l_qr, rr, ilamr, dz1d, vt, vtn, substeps_sedi, ktop_sedi)
+  subroutine rain_fallspeed(rhof, l_qr, rr, ilamr, dz1d, vt, vtn, vtz, substeps_sedi, ktop_sedi, &
+                            ssflg)
     !! calculates mass and number weighted fall speeds for rain
     !! and optionally the substepping required and the top k-level of sedimentation
-    use module_mp_tempo_params, only : crg, av_r, org3, fv_r, cre
+    use module_mp_tempo_params, only : crg, av_r, org3, org4, fv_r, cre
 
     real(wp), dimension(:), intent(in) :: rhof, dz1d, rr
     real(dp), dimension(:), intent(in) :: ilamr
     logical, dimension(:), intent(in) :: l_qr
-    real(wp), dimension(:), intent(inout) :: vt, vtn
+    real(wp), dimension(:), intent(inout) :: vt, vtn, vtz
     integer, intent(out), optional :: substeps_sedi, ktop_sedi
+    integer, intent(in) :: ssflg
     real(wp) :: dz_by_vt
     real(dp) :: lamr
     integer :: k, nz
@@ -1711,14 +1796,23 @@ module module_mp_tempo_main
       if (rr(k) > r1) then
         lamr = 1._dp / ilamr(k)
         vt(k) = rhof(k)*av_r*crg(6)*org3 * lamr**cre(3) *((lamr+fv_r)**(-cre(6)))
+        ! could set vtn = vt if ssflg >=2
         vtn(k) = rhof(k)*av_r*crg(7)/crg(12) * lamr**cre(12)*((lamr+fv_r)**(-cre(7)))
+        vtz(k) = 0
+        IF ( ssflg >=2 ) vtz(k) = rhof(k)*av_r*crg(14)*org4 * lamr**cre(15) *((lamr+fv_r)**(-cre(14)))
       else
         vt(k) = vt(k+1)
         vtn(k) = vtn(k+1)
+        IF ( ssflg >=2 ) vtz(k) = vtz(k+1)
       endif
+      IF ( ssflg == 0 ) THEN
+        ! no size sorting, set Vn = Vq
+        vtn(k) = vt(k)
+      ENDIF
+
       if (max(vt(k), vtn(k)) > 1.e-3_wp) then
         if (present(ktop_sedi)) ktop_sedi = max(ktop_sedi, k)
-        dz_by_vt = dz1d(k) / (max(vt(k), vtn(k)))
+        dz_by_vt = dz1d(k) / (max(max(vtz(k),vt(k)), vtn(k)))
         if (present(substeps_sedi)) then
           substeps_sedi = max(substeps_sedi, int(global_dt/dz_by_vt + 1._wp))
         endif 
@@ -1730,20 +1824,21 @@ module module_mp_tempo_main
   end subroutine rain_fallspeed
 
 
-  subroutine graupel_fallspeed(rhof, rho, visco, l_qg, rg, rb, qb1d, idx, ilamg, &
-      dz1d, vt, vtn, substeps_sedi, ktop_sedi)
+  subroutine graupel_fallspeed(rhof, rho, visco, l_qg, rg, rb, zg, qb1d, idx, ilamg, &
+      dz1d, vt, vtn, vtz, substeps_sedi, ktop_sedi,igrfallopt, ssflg)
     !! calculates mass and number weighted fall speeds for graupel
     !! and optionally the substepping required and the top k-level of sedimentation
     use module_mp_tempo_params, only : nrhg, rho_g, av_g_old, bv_g_old, &
-      cgg, t0, mu_g, ogg2, ogg3, a_coeff, b_coeff, meters3_to_liters
+      cgg, t0, mu_g, ogg2, ogg3, ogg4, a_coeff, b_coeff, meters3_to_liters, rho_not
 
-    real(wp), dimension(:), intent(in) :: rhof, rho, visco, dz1d, rg, rb
+    real(wp), dimension(:), intent(in) :: rhof, rho, visco, dz1d, rg, rb, zg
     real(wp), dimension(:), intent(in), optional :: qb1d
     real(dp), dimension(:), intent(in) :: ilamg
     logical, dimension(:), intent(in) :: l_qg
     integer, dimension(:), intent(in) :: idx
-    real(wp), dimension(:), intent(inout) :: vt, vtn
+    real(wp), dimension(:), intent(inout) :: vt, vtn, vtz
     integer, intent(out), optional :: substeps_sedi, ktop_sedi
+    integer, intent(in) :: igrfallopt, ssflg
     real(wp) :: dz_by_vt, dens_g, afall, bfall
     integer :: k, nz
 
@@ -1754,8 +1849,16 @@ module module_mp_tempo_main
       if (rg(k) > r1) then
         if (present(qb1d)) then
           dens_g = max(rho_g(1), min(meters3_to_liters*rg(k)/rb(k), rho_g(nrhg)))
-          afall = a_coeff*((4._wp*dens_g*9.8_wp)/(3._wp*rho(k)))**b_coeff
-          afall = afall * visco(k)**(1._wp-2._wp*b_coeff)
+          IF ( igrfallopt <= 2 ) THEN
+           IF ( igrfallopt <= 1 ) THEN
+             afall = a_coeff*((4._wp*dens_g*9.8_wp)/(3._wp*rho(k)))**b_coeff
+           ELSE
+             afall = a_coeff*((4._wp*dens_g*9.8_wp)/(3._wp*rho_not))**b_coeff
+           ENDIF
+           afall = afall * visco(k)**(1._wp-2._wp*b_coeff)
+          ELSE ! igrfallopt == 3
+           afall = (4.0*dens_g*9.8/(3*0.504843467198652*rho_not))**b_coeff
+          ENDIF
           bfall = 3._wp*b_coeff - 1._wp
         else
           afall = av_g_old
@@ -1764,18 +1867,29 @@ module module_mp_tempo_main
         vt(k) = rhof(k)*afall*cgg(6,idx(k))*ogg3 * ilamg(k)**bfall
         ! idea: if (temp(k) > t0) vt(k) = max(vt(k), vtrr(k))
 
+        IF ( ssflg > 0 ) THEN
+        ! could set vtn = vt if ssflg >=2
         if (mu_g == 0) then
           vtn(k) = rhof(k)*afall*cgg(7,idx(k))/cgg(12,idx(k)) * ilamg(k)**bfall
         else
           vtn(k) = rhof(k)*afall*cgg(8,idx(k))*ogg2 * ilamg(k)**bfall
         endif
+        ELSE
+         ! no size sorting, set Vn = Vq
+          vtn(k) = vt(k)
+        ENDIF
+
+        vtz(k) = 0._wp
+        IF ( ssflg >= 2 ) vtz(k) = rhof(k)*afall*cgg(13,idx(k))*ogg4 * ilamg(k)**bfall
+
       else
         vt(k) = vt(k+1)
         vtn(k) = vtn(k+1)
+        IF ( ssflg >= 2 ) vtz(k) = vtz(k+1)
       endif
       if (vt(k) > 1.e-3_wp) then
         if (present(ktop_sedi)) ktop_sedi = max(ktop_sedi, k)
-        dz_by_vt = dz1d(k) / vt(k)
+        dz_by_vt = dz1d(k) / Max( vt(k),vtz(k) )
         if (present(substeps_sedi)) then
           substeps_sedi = max(substeps_sedi, int(global_dt/dz_by_vt + 1._wp))
         endif 
@@ -2505,6 +2619,9 @@ module module_mp_tempo_main
     lam_exp = lamg * (cgg(3,1)*ogg2*ogg1)**bm_g
     n0_exp = ogg1*rg/am_g(idx) * lam_exp**cge(1,1)
     nig = nint(log10(real(n0_exp, kind=dp)))
+    IF ( .not. ( -100 < nig .and. nig < 100 ) ) THEN
+      write(0,*) 'nig = ', nig,n0_exp,rg,lam_exp,ilamg
+    ENDIF
     do_loop_ng: do nn = nig-1, nig+1
       n = nn
       if ( (n0_exp/10._wp**nn) >= 1._wp .and. (n0_exp/10._wp**nn) < 10._wp) exit do_loop_ng

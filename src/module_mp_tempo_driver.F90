@@ -309,6 +309,9 @@ module module_mp_tempo_driver
     allocate(tempo_diags%graupel_liquid_equiv_precip(its:ite, jts:jte), source=0._wp)
     allocate(tempo_diags%frozen_fraction(its:ite, jts:jte), source=0._wp)
     allocate(tempo_diags%frz_rain_precip(its:ite, jts:jte), source=0._wp)
+    
+    tempo_diags%rain_precip(its:ite, jts:jte) = 0.0
+    tempo_diags%graupel_liquid_equiv_precip(its:ite, jts:jte) = 0.0
 
     ! temperature or theta and exner
     if (present(t)) then
@@ -401,6 +404,7 @@ module module_mp_tempo_driver
         if (allocated(tempo_diags%max_hail_diameter_sfc) .and. allocated(tempo_diags%max_hail_diameter_column) .and. allocated(tempo_main_diags%max_hail_diameter)) then
           tempo_diags%max_hail_diameter_sfc(i,j) = tempo_main_diags%max_hail_diameter(1)
           tempo_diags%max_hail_diameter_column(i,j) = maxval(tempo_main_diags%max_hail_diameter)
+
         endif
 
         ! return variables to model

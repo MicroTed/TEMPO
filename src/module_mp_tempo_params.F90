@@ -103,7 +103,7 @@ module module_mp_tempo_params
   real(wp), parameter :: aero_max = 9999.e6_wp !! maximum aerosol value
   real(wp), parameter :: hgfrz = 235.16_wp !! temperature to freeze all liquid \([K]\)
   real(wp), parameter :: nt_c_o = 50.e6_wp !! cloud number concentration over ocean (non-aerosol aware) \([m^{-3}]\)
-  real(wp), parameter :: nt_c_l = 100.e6_wp !! cloud number concentration over land (non-aerosol aware) \([m^{-3}]\)
+  real(wp), parameter :: nt_c_l = 1900.e6_wp !! cloud number concentration over land (non-aerosol aware) \([m^{-3}]\)
   real(wp), parameter :: nt_c_max = 1999.e6_wp !! maximum cloud number concentration \([m^{-3}]\)
   real(wp), parameter :: nt_c_min = 2._wp !! minimum cloud number concentration \([m^{-3}]\)
 
@@ -326,11 +326,11 @@ module module_mp_tempo_params
   real(wp), protected, dimension(15) :: ocg1, ocg2 !! inverse of specific ccg values
   real(wp), protected, dimension(7) :: cie, cig !! for \(cig = \Gamma(x)\), cie is x for cloud ice
   real(wp), protected :: oig1, oig2 !! inverse of specific cig values
-  real(wp), protected, dimension(13) :: cre, crg !! for \(crg = \Gamma(x)\), cre is x for rain
-  real(wp), protected :: ore1, org1, org2, org3 !! inverse of specific cre and crg values
+  real(wp), protected, dimension(15) :: cre, crg !! for \(crg = \Gamma(x)\), cre is x for rain
+  real(wp), protected :: ore1, org1, org2, org3, org4 !! inverse of specific cre and crg values
   real(wp), protected, dimension(17) :: cse, csg !! for \(csg = \Gamma(x)\), cse is x for snow
-  real(wp), protected, dimension(12,nrhg) :: cge, cgg !! for \(cgg = \Gamma(x)\), cge is x for graupel
-  real(wp), protected :: oge1, ogg1, ogg2, ogg3 !! inverse of specific cge and cgg values
+  real(wp), protected, dimension(14,nrhg) :: cge, cgg !! for \(cgg = \Gamma(x)\), cge is x for graupel
+  real(wp), protected :: oge1, ogg1, ogg2, ogg3, ogg4 !! inverse of specific cge and cgg values
 
   ! precomputed constants in various rate equations
   real(wp), protected :: t1_qr_qc, t1_qr_qi, t2_qr_qi !! terms for rain collecting cloud water and cloud ice equations
@@ -375,7 +375,12 @@ module module_mp_tempo_params
   real(table_dp), allocatable, dimension(:,:,:,:) :: tpi_qcfz, tni_qcfz !! cloud droplet freezing data arrays
   real(table_dp), allocatable, dimension(:,:,:,:) :: tpi_qrfz, tpg_qrfz, tni_qrfz, tnr_qrfz !! rain freezing data arrays
   real(dp), allocatable, dimension(:,:) :: tps_iaus, tni_iaus, tpi_ide !! cloud ice depositional growth and conversion to snow data array
-    
+  real(wp), parameter :: consg1 = (6.0 + mu_g)*(5.0 + mu_g)*(4.0 + mu_g)/  &
+      &            ((3.0 + mu_g)*(2.0 + mu_g)*(1.0 + mu_g))
+  real(wp), parameter :: consr1 = (6.0 + mu_r)*(5.0 + mu_r)*(4.0 + mu_r)/  &
+      &            ((3.0 + mu_r)*(2.0 + mu_r)*(1.0 + mu_r))
+
+
   ! -------------------------------------------------------------------------------------------------------
   ! -------------------------------------------------------------------------------------------------------
   contains
@@ -511,7 +516,7 @@ module module_mp_tempo_params
     cre(3) = bm_r + mu_r + 1._wp
     cre(4) = bm_r*2._wp + mu_r + 1._wp
     cre(5) = mu_r + bv_r + 1._wp
-    cre(6) = bm_r + mu_r + bv_r + 1._wp
+    cre(6) = bm_r + mu_r + bv_r + 1._wp ! mass-wgt fall speed
     cre(7) = bm_r*0.5_wp + mu_r + bv_r + 1._wp
     cre(8) = bm_r + mu_r + bv_r + 3._wp
     cre(9) = mu_r + bv_r + 3._wp
@@ -519,8 +524,10 @@ module module_mp_tempo_params
     cre(11) = 0.5_wp*(bv_r + 5._wp + 2._wp*mu_r)
     cre(12) = bm_r*0.5_wp + mu_r + 1._wp
     cre(13) = bm_r*2._wp + mu_r + bv_r + 1._wp
+    cre(14) = bm_r + mu_r + bv_r + 4._wp ! refl-wgt fall speed
+    cre(15) = bm_r + mu_r + 4._wp ! refl
 
-    do n = 1, 13
+    do n = 1, 15
       crg(n) = gamma(cre(n))
     enddo
 
@@ -528,6 +535,7 @@ module module_mp_tempo_params
     org1 = 1.0_wp / crg(1)
     org2 = 1.0_wp / crg(2)
     org3 = 1.0_wp / crg(3)
+    org4 = 1.0_wp / crg(15) ! refl
 
     ! gamma functions for snow
     cse(1) = bm_s + 1._wp
@@ -559,18 +567,20 @@ module module_mp_tempo_params
     cge(4,:) = bm_g*2. + mu_g + 1._wp
     cge(10,:) = mu_g + 2._wp
     cge(12,:) = bm_g*0.5_wp + mu_g + 1._wp
+    cge(14,:) = bm_g + mu_g + 4._wp
 
     do m = 1, nrhg
       cge(5,m) = bm_g*2._wp + mu_g + bv_g(m) + 1._wp
-      cge(6,m) = bm_g + mu_g + bv_g(m) + 1._wp
+      cge(6,m) = bm_g + mu_g + bv_g(m) + 1._wp ! mass-wgt graupel
       cge(7,m) = bm_g*0.5_wp + mu_g + bv_g(m) + 1._wp
-      cge(8,m) = mu_g + bv_g(m) + 1._wp
+      cge(8,m) = mu_g + bv_g(m) + 1._wp ! number-wgt graupel
       cge(9,m) = mu_g + bv_g(m) + 3._wp
       cge(11,m) = 0.5_wp*(bv_g(m) + 5._wp + 2._wp*mu_g)
+      cge(13,m) = bm_g + mu_g + bv_g(m) + 4._wp ! reflectivity-wgt graupel
     enddo
 
     do m = 1, nrhg
-      do n = 1, 12
+      do n = 1, 14
         cgg(n,m) = gamma(cge(n,m))
       enddo
     enddo
@@ -578,6 +588,7 @@ module module_mp_tempo_params
     ogg1 = 1.0_wp / cgg(1,1)
     ogg2 = 1.0_wp / cgg(2,1)
     ogg3 = 1.0_wp / cgg(3,1)
+    ogg4 = 1.0_wp / cgg(14,1)
 
     ! rain collecting cloud water and cloud ice
     t1_qr_qc = pi * 0.25_wp * av_r * crg(9)

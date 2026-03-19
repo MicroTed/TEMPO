@@ -22,6 +22,7 @@ module module_mp_tempo_cfgs
     logical :: verbose = .false. !! flag to turn on verbose print statements
     ! flags to turn on/off diagnostic output
     logical :: refl10cm_flag = .true. !! flag to output 10cm reflectivity
+    integer :: ke_refl10cm = -1 !! If positive, only compute refl at that model level, otherwise full depth
     logical :: re_cloud_flag = .true. !! flag to output cloud effective radius
     logical :: re_ice_flag = .true. !! flag to output ice effective radius
     logical :: re_snow_flag = .true. !! flag to output snow effective radius
@@ -29,6 +30,9 @@ module module_mp_tempo_cfgs
     logical :: rain_med_vol_diam_flag = .false. !! flag to output median volume diameter for rain
     logical :: graupel_med_vol_diam_flag = .false. !! flag to output median volume diameter for graupel
     logical :: cloud_number_mixing_ratio_flag = .false. !! flag to output cloud number mixing ratio
+    integer :: igrfallopt = 3 ! graupel fall speed: 1 = original (with rho(k)), 2 = with rho_not, 3 = Cd to match av_g
+    integer :: rssflg = 2 ! rain sedimentation flag: 0 = vtng=vtg, 1=default, 2=pseudo 3-moment
+    integer :: hssflg = 2 ! graupel sedimentation flag: 0 = vtng=vtg, 1=default, 2=pseudo 3-moment
   end type
 
   ! tempo lookup table filenames
