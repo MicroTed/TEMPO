@@ -131,7 +131,7 @@ module module_mp_tempo_main
  
     real(wp), dimension(kts:kte) :: rc, ri, rr, rs, rg, rb !! local microphysical variables
     real(wp), dimension(kts:kte) :: ni, nr, nc, ng, nwfa, nifa !! local microphysics variables
-    real(wp), dimension(kts:kte) :: nrtmp, ngtmp, zr, zg !! local microphysical variables
+    real(wp), dimension(kts:kte) :: nrtmp, ngtmp, zr, zg, zrsav, zgsav !! local microphysical variables
 
     real(dp), dimension(kts:kte) :: ilamc, ilami, ilamr, ilamg !! inverse lambda
     real(wp), dimension(kts:kte) :: mvd_r, mvd_c, mvd_g !! median volume diameter
@@ -150,7 +150,7 @@ module module_mp_tempo_main
     real(wp) :: tempc, tc0
     logical :: do_micro, supersaturated
     logical, save :: first_call_main = .true.
-    integer :: k, nz
+    integer :: k, km1, nz
 
     ! --------------------------------------------------------------------------------------------
     do_micro = .false.
@@ -329,11 +329,13 @@ module module_mp_tempo_main
         call get_cloud_number(xrx, qr1d, qi1d, qs1d, pres, temp, w1d, xnx)
         nc = xnx * rho
       else
-        ! single modment constant value
+        ! single moment constant value
         call get_cloud_number(nc=nc)
-        nc = nc*rho
+        nc(:) =  nc*rho ! 0.8e9*rho(:) !
       endif
       allocate(ncsave(nz), source=nc)
+      nwfa(:) = nc(:)
+      ncsave(:) = nc(:)
     endif
     call cloud_check_and_update(rho=rho, l_qc=l_qc, qc1d=qc1d, nc1d=nc1d, &
       rc=rc, nc=nc, qcten=qcten, ncten=ncten, ilamc=ilamc, mvd_c=mvd_c)
@@ -581,23 +583,24 @@ module module_mp_tempo_main
             vt=vtrr, vtn=vtnr, vtz=vtzr, ssflg=tempo_cfgs%rssflg)
         enddo 
       else
-          IF ( tempo_cfgs%rssflg >= 2 ) THEN
+          if ( tempo_cfgs%rssflg >= 2 ) then
            ! temporary reflectivity moment; rg is mass content and ng is number per m**3
-            DO k = 1,nz
-              IF ( rr(k) > r1 .and. nr(k) > r2 ) THEN
-              zr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*nr(k))
-              ELSE
-              zr(k) = 0.
-              ENDIF
-            ENDDO
-          ENDIF
+            do k = 1,nz
+              if ( rr(k) > r1 .and. nr(k) > r2 ) then
+               zr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*nr(k))
+              else
+               zr(k) = 0.
+              endif
+              zrsav(k) = zr(k) ! used for comparison with sedimented zr
+            enddo
+          endif
         do n = 1, substeps_sedi
-          IF ( tempo_cfgs%rssflg >= 2 ) THEN
+          if ( tempo_cfgs%rssflg >= 2 ) then
            ! temporary reflectivity moment; rg is mass content and ng is number per m**3
-            DO k = 1,nz
+            do k = 1,nz
               nrtmp(k) = nr(k)
-            ENDDO
-          ENDIF
+            enddo
+          endif
           call sedimentation(xr=rr, vt=vtrr, dz1d=dz1d, rho=rho, xten=qrten, limit=r1, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%rain_precip)
           IF ( tempo_cfgs%rssflg < 2 ) THEN
@@ -609,12 +612,16 @@ module module_mp_tempo_main
             steps=substeps_sedi, ktop_sedi=ktop_sedi)
           
            ! diagnose new Nr from rr and zr
-            DO k = 1,nz
-              IF ( rr(k) > r1 .and. zr(k) > 1.e-30 ) THEN
-              nr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*zr(k))
-              ELSE
+            do k = 1,nz
+              km1 = Max(1,k-1)
+              if ( rr(k) > r1 .and. zr(k) > 1.e-28 .and. zr(km1) > 1.e-28) then
+               if ( zrsav(km1) < zr(km1) ) then ! compare pre- and post-sed values of Zg at next point down
+                                                ! to see if Zg is increasing by sedimentation
+                nr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*zr(k))
+               endif
+              else
               nr(k) = 0.
-              ENDIF
+              endif
               nrten(k) =  nrten(k) + (nr(k) - nrtmp(k))*substeps_sedi/(rho(k)*dt) ! tendency in #/kg; ng in #/m**3
             ENDDO
           
@@ -667,46 +674,51 @@ module module_mp_tempo_main
             vt=vtrg, vtn=vtng, vtz=vtzg,igrfallopt=tempo_cfgs%igrfallopt, ssflg=tempo_cfgs%hssflg)
         enddo 
       else
-          IF (tempo_cfgs%hssflg >= 2 ) THEN
+          if (tempo_cfgs%hssflg >= 2 ) then
            ! temporary reflectivity moment; rg is mass content and ng is number per m**3
-            DO k = 1,nz
-              IF ( rg(k) > r1 .and. ng(k) > r2 ) THEN
-              zg(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*ng(k))
-              ELSE
-              zg(k) = 0.
-              ENDIF
-            ENDDO
-          ENDIF
+            do k = 1,nz
+              if ( rg(k) > r1 .and. ng(k) > r2 ) then
+                zg(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*ng(k))
+              else
+                zg(k) = 0.
+              endif
+              zgsav(k) = zg(k)
+            enddo
+          endif
         do n = 1, substeps_sedi
-          IF (tempo_cfgs%hssflg >= 2 ) THEN
+          if (tempo_cfgs%hssflg >= 2 ) then
            ! temporary reflectivity moment; rg is mass content and ng is number per m**3
-            DO k = 1,nz
+            do k = 1,nz
               ngtmp(k) = ng(k)
-            ENDDO
-          ENDIF
+            enddo
+          endif
           call sedimentation(xr=rg, vt=vtrg, dz1d=dz1d, rho=rho, xten=qgten, limit=r1, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi, precip=tempo_main_diags%graupel_liquid_equiv_precip)
           call sedimentation(xr=rb, vt=vtrg, dz1d=dz1d, rho=rho, xten=qbten, &
             limit=meters3_to_liters*r1/rho_g(nrhg), steps=substeps_sedi, ktop_sedi=ktop_sedi)
-          IF ( tempo_cfgs%hssflg < 2 ) THEN
+          if ( tempo_cfgs%hssflg < 2 ) then
           call sedimentation(xr=ng, vt=vtng, dz1d=dz1d, rho=rho, xten=ngten, limit=r2, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi)
-          ELSEIF ( tempo_cfgs%hssflg >= 2 ) THEN
+          elseif ( tempo_cfgs%hssflg >= 2 ) then
           ! pseudo 3M sedimentation
           call sedimentation(xr=zg, vt=vtzg, dz1d=dz1d, rho=rho, xten=zgten, limit=1.e-30, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi)
           
            ! diagnose new Ng from rg and zg
-            DO k = 1,nz
-              IF ( rg(k) > r1 .and. zg(k) > 1.e-30 ) THEN
-              ng(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*zg(k))
-              ELSE
+            do k = 1,nz
+              km1 = Max(1,k-1)
+              if ( rg(k) > r1 .and. zg(k) > 1.e-28 .and. zg(km1) > 1.e-28 ) then
+                if ( zg(km1) > zgsav(km1) ) then ! compare pre- and post-sed values of Zg at next point down
+                                                ! to see if Zg is increasing by sedimentation
+                  ng(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*zg(k))
+                endif
+              else
               ng(k) = 0.
-              ENDIF
+              endif
               ngten(k) =  ngten(k) + (ng(k) - ngtmp(k))*substeps_sedi/(rho(k)*dt)
-            ENDDO
+            enddo
           
-          ENDIF
+          endif ! hssflg
           vtrg = 0._wp
           vtng = 0._wp
           vtzg = 0._wp
@@ -895,6 +907,12 @@ module module_mp_tempo_main
       call effective_radius(temp, l_qc, nc, ilamc, l_qi, ilami, l_qs, rs, &
         tempo_main_diags%re_cloud, tempo_main_diags%re_ice, tempo_main_diags%re_snow)
     endif
+    
+    if (allocated( ncsave )) deallocate( ncsave )
+    if (allocated( xncx )) deallocate( xncx )
+    if (allocated( xngx )) deallocate( xngx )
+    if (allocated( xqbx )) deallocate( xqbx )
+
   end subroutine tempo_main
 
 
@@ -987,12 +1005,12 @@ module module_mp_tempo_main
       else
         l_qc(k) = .false.
         rc(k) = r1
-        nc(k) = nt_c_min
         mvd_c(k) = d0c
         ilamc(k) = 0._dp
         qcten(k) = -qc1d(k) * global_inverse_dt
         qc1d(k) = 0.0_wp
         if (present(nc1d)) then
+          nc(k) = nt_c_min
           ncten(k) = -nc1d(k) * global_inverse_dt
           nc1d(k) = 0.0_wp
         endif 
@@ -1852,6 +1870,10 @@ module module_mp_tempo_main
           IF ( igrfallopt <= 2 ) THEN
            IF ( igrfallopt <= 1 ) THEN
              afall = a_coeff*((4._wp*dens_g*9.8_wp)/(3._wp*rho(k)))**b_coeff
+             IF ( igrfallopt == 0 ) THEN
+             ! cancel out rhof below
+               afall = afall/rhof(k)
+             ENDIF
            ELSE
              afall = a_coeff*((4._wp*dens_g*9.8_wp)/(3._wp*rho_not))**b_coeff
            ENDIF

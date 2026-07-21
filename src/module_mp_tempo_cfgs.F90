@@ -30,9 +30,9 @@ module module_mp_tempo_cfgs
     logical :: rain_med_vol_diam_flag = .false. !! flag to output median volume diameter for rain
     logical :: graupel_med_vol_diam_flag = .false. !! flag to output median volume diameter for graupel
     logical :: cloud_number_mixing_ratio_flag = .false. !! flag to output cloud number mixing ratio
-    integer :: igrfallopt = 3 ! graupel fall speed: 1 = original (with rho(k)), 2 = with rho_not, 3 = Cd to match av_g
-    integer :: rssflg = 2 ! rain sedimentation flag: 0 = vtng=vtg, 1=default, 2=pseudo 3-moment
-    integer :: hssflg = 2 ! graupel sedimentation flag: 0 = vtng=vtg, 1=default, 2=pseudo 3-moment
+    integer :: igrfallopt = 1 ! graupel fall speed: 1 = original (with rho(k)), 2 = with rho_not, 3 = Cd to match av_g
+    integer :: rssflg = 1 ! rain sedimentation flag: 0 = vtng=vtg, 1=default, 2=pseudo 3-moment
+    integer :: hssflg = 1 ! graupel sedimentation flag: 0 = vtng=vtg, 1=default, 2=pseudo 3-moment
   end type
 
   ! tempo lookup table filenames
