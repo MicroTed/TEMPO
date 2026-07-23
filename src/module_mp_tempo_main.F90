@@ -750,11 +750,12 @@ module module_mp_tempo_main
               km1 = Max(1,k-1)
               if ( rg(k) > r1 .and. zg(k) > 1.e-28 .and. zg(km1) > 1.e-28 ) then
                 if ( zg(km1) > zgsav(km1) ) then ! compare pre- and post-sed values of Zg at next point down
-                                                ! to see if Zg is increasing by sedimentation
-                  ng(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*zg(k))
+                                                ! to see if Zg is increasing by sedimentation, in which case
+                                                ! we replace the value of ng
+                 ng(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*zg(k))
                 endif
               else
-              ng(k) = 0.
+                 ng(k) = 0.
               endif
               ngten(k) =  ngten(k) + (ng(k) - ngtmp(k))*substeps_sedi/(rho(k)*dt)
             enddo
@@ -1937,11 +1938,11 @@ module module_mp_tempo_main
                afall = afall/rhof(k)
              ENDIF
            ELSE
-             afall = a_coeff*((4._wp*dens_g*earth_gravity)/(3._wp*rho_not))**b_coeff
+             afall = a_coeff*((4._wp*dens_g*earth_gravity)/(3._wp*rho_not))**b_coeff ! test using rho_not instead of rho(k)
            ENDIF
            afall = afall * visco(k)**(1._wp-2._wp*b_coeff)
           ELSE ! igrfallopt == 3
-           afall = (4.0*dens_g*9.8/(3*0.504843467198652*rho_not))**b_coeff
+           afall = (4.0*dens_g*9.8/(3*0.504843467198652*rho_not))**b_coeff ! ERM option to set afall to match av_g
           ENDIF
           bfall = 3._wp*b_coeff - 1._wp
         else
@@ -1953,10 +1954,10 @@ module module_mp_tempo_main
 
         IF ( ssflg > 0 ) THEN
         ! could set vtn = vt if ssflg >=2
-        if (mu_g == 0) then
-          vtn(k) = rhof(k)*afall*cgg(7,idx(k))/cgg(12,idx(k)) * ilamg(k)**bfall
-        else
-          vtn(k) = rhof(k)*afall*cgg(8,idx(k))*ogg2 * ilamg(k)**bfall
+        if (mu_g == 0 .and. ssflg < 2 ) then ! why is it tested on mu_g? Only boosting Vn if alpha_g = 0?
+          vtn(k) = rhof(k)*afall*cgg(7,idx(k))/cgg(12,idx(k)) * ilamg(k)**bfall ! 'boosted' Vn
+        else ! use normal Vn if ssflg >= 2, which has correction algorithm
+          vtn(k) = rhof(k)*afall*cgg(8,idx(k))*ogg2 * ilamg(k)**bfall ! 'normal' Vn (assumes bfall is same for all densities)
         endif
         ELSE
          ! no size sorting, set Vn = Vq
@@ -1964,7 +1965,9 @@ module module_mp_tempo_main
         ENDIF
 
         vtz(k) = 0._wp
-        IF ( ssflg >= 2 ) vtz(k) = rhof(k)*afall*cgg(13,idx(k))*ogg4 * ilamg(k)**bfall
+        IF ( ssflg >= 2 ) THEN
+          vtz(k) = rhof(k)*afall*cgg(13,idx(k))*ogg4 * ilamg(k)**bfall
+        ENDIF
 
       else
         vt(k) = vt(k+1)

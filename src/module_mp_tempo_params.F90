@@ -50,7 +50,7 @@ module module_mp_tempo_params
   real(wp), parameter :: fv_r = 195.0_wp !! rain fallspeed power-law coefficient
   real(wp), parameter :: av_c = 0.316946e8_wp !! cloud fallspeed power-law coefficient
   real(wp), parameter :: a_coeff = 0.47244157_wp !! graupel fallspeed power-law coefficient
-  real(wp), parameter :: b_coeff = 0.54698726_wp !! grapuel fallspeed power-law coefficient
+  real(wp), parameter :: b_coeff = 0.54698726_wp !! grapuel fallspeed power-law coefficient = (bv_g_new+1.)/3.
   real(wp), parameter :: av_i = 1493.9 !! ice fallspeed power-law coefficient
     !> @note
     !> am_s is the snow mass power-law coefficient
@@ -572,12 +572,12 @@ module module_mp_tempo_params
 
     do m = 1, nrhg
       cge(5,m) = bm_g*2._wp + mu_g + bv_g(m) + 1._wp
-      cge(6,m) = bm_g + mu_g + bv_g(m) + 1._wp ! mass-wgt graupel
-      cge(7,m) = bm_g*0.5_wp + mu_g + bv_g(m) + 1._wp
-      cge(8,m) = mu_g + bv_g(m) + 1._wp ! number-wgt graupel
+      cge(6,m) = bm_g + mu_g + bv_g(m) + 1._wp ! mass-wgt graupel Vt
+      cge(7,m) = bm_g*0.5_wp + mu_g + bv_g(m) + 1._wp ! 'boosted' number-wgt graupel Vt
+      cge(8,m) = mu_g + bv_g(m) + 1._wp ! 'normal' number-wgt graupel Vt
       cge(9,m) = mu_g + bv_g(m) + 3._wp
       cge(11,m) = 0.5_wp*(bv_g(m) + 5._wp + 2._wp*mu_g)
-      cge(13,m) = bm_g + mu_g + bv_g(m) + 4._wp ! reflectivity-wgt graupel
+      cge(13,m) = bm_g + mu_g + bv_g(m) + 4._wp ! reflectivity-wgt graupel Vt
     enddo
 
     do m = 1, nrhg
