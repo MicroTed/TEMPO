@@ -40,7 +40,8 @@ module module_mp_tempo_driver
 !! \htmlinclude tempo_init.html
 !!
   subroutine tempo_init(aerosolaware_flag, hailaware_flag, semi_sedi_flag, cloud_condensation_flag, &
-    refl10cm_from_melting_flag, ml_for_bl_nc_flag, ml_for_nc_flag, force_init_flag, tempo_cfgs)
+    refl10cm_from_melting_flag, ml_for_bl_nc_flag, ml_for_nc_flag, force_init_flag, tempo_cfgs, &
+    rssflg, hssflg, igrfallopt)
     !! initialize tempo microphysics
     use module_mp_tempo_params, only : get_version, tempo_version, t_efrw, &
       initialize_graupel_vars, initialize_parameters, initialize_bins_for_tables, &
@@ -51,6 +52,7 @@ module module_mp_tempo_driver
 
     logical, intent(in), optional :: aerosolaware_flag, hailaware_flag, refl10cm_from_melting_flag, &
       ml_for_bl_nc_flag, ml_for_nc_flag, force_init_flag, semi_sedi_flag, cloud_condensation_flag
+    integer, intent(in), optional :: rssflg, hssflg, igrfallopt
     type(ty_tempo_cfgs), intent(inout) :: tempo_cfgs
 
     character(len=100) :: table_filename
@@ -77,6 +79,9 @@ module module_mp_tempo_driver
       if (present(semi_sedi_flag)) tempo_cfgs%semi_sedi_flag = semi_sedi_flag
       if (present(cloud_condensation_flag)) tempo_cfgs%cloud_condensation_flag = cloud_condensation_flag
       if (present(refl10cm_from_melting_flag)) tempo_cfgs%refl10cm_from_melting_flag = refl10cm_from_melting_flag
+      if (present(rssflg) ) tempo_cfgs%rssflg = rssflg
+      if (present(hssflg) ) tempo_cfgs%hssflg = hssflg
+      if (present(igrfallopt) ) tempo_cfgs%igrfallopt = igrfallopt
 
       if (tempo_cfgs%verbose) then
         write(*,'(A)') 'tempo_init() --- TEMPO microphysics configuration options: '

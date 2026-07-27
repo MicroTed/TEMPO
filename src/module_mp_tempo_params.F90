@@ -69,11 +69,11 @@ module module_mp_tempo_params
 
   real(wp), parameter :: rho_i = 890._wp !! density of cloud ice \([kg\, m^{-3}]\)
   real(wp), parameter :: xm0i = 1.e-12_wp !! ice initiates with this mass \([kg]\)
-  real(wp), parameter :: d0c = 1.e-6_wp !! minimum diameter of cloud droplets \([m]\)
-  real(wp), parameter :: d0r = 50.e-6_wp !! minimum diameter of raindrops \([m]\)
-  real(wp), parameter :: d0s = 300.e-6_wp !! minimum diameter of snow \([m]\)
-  real(wp), parameter :: d0g = 350.e-6_wp !! minimum diameter of graupel \([m]\)
-  real(wp), parameter :: d0r_max = 2.5e-3_wp !! maximum diameter of raindrops \([m]\)
+  real(wp), parameter :: d0c = 1.e-6_wp !! minimum median volume diameter of cloud droplets \([m]\)
+  real(wp), parameter :: d0r = 50.e-6_wp !! minimum median volume diameter of raindrops (and graupel?) \([m]\)
+  real(wp), parameter :: d0s = 300.e-6_wp !! minimum median volume diameter of snow \([m]\)
+  real(wp), parameter :: d0g = 350.e-6_wp !! minimum median volume diameter of graupel \([m]\)
+  real(wp), parameter :: d0r_max = 2.5e-3_wp !! maximum median volume diameter of raindrops \([m]\)
 
   real(wp), parameter :: c_cube = 0.5_wp !! capacitance of a sphere \(\left(D^{3}\right)\)
   real(wp), parameter :: c_sqrd = 0.15_wp !! capacitance of plates/aggregates \(\left(D^{2}\right)\)

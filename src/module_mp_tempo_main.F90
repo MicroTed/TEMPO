@@ -652,7 +652,7 @@ module module_mp_tempo_main
             do k = 1,nz
               km1 = Max(1,k-1)
               if ( rr(k) > r1 .and. zr(k) > 1.e-28 .and. zr(km1) > 1.e-28) then
-               if ( zrsav(km1) < zr(km1) ) then ! compare pre- and post-sed values of Zg at next point down
+               if ( zrsav(km1) < zr(km1) .or. (k > 1 .and. zrsav(km1) < 1.e-28) ) then ! compare pre- and post-sed values of Zg at next point down
                                                 ! to see if Zg is increasing by sedimentation
                 nr(k) = (6./(pi*1000.))**2*consr1*(rho(k)*rr(k))**2/(rho(k)*zr(k))
                endif
@@ -739,7 +739,7 @@ module module_mp_tempo_main
             steps=substeps_sedi, ktop_sedi=ktop_sedi, dt=dt)
           elseif ( tempo_cfgs%hssflg >= 2 ) then
           ! pseudo 3M sedimentation
-          ! NEED TO SET VTNG HERE TO BE THE USUAL N-WEIGHTED FALL SPEED, NOT THE 'BOOSTED' VN
+          ! vtng here is the usual N-weighted fall speed, not the 'boosted' Vn
           call sedimentation(xr=ng, vt=vtng, dz1d=dz1d, rho=rho, xten=ngten, limit=r2, &
             steps=substeps_sedi, ktop_sedi=ktop_sedi, dt=dt)
           call sedimentation(xr=zg, vt=vtzg, dz1d=dz1d, rho=rho, xten=zgten, limit=1.e-30, &
@@ -749,7 +749,7 @@ module module_mp_tempo_main
             do k = 1,nz
               km1 = Max(1,k-1)
               if ( rg(k) > r1 .and. zg(k) > 1.e-28 .and. zg(km1) > 1.e-28 ) then
-                if ( zg(km1) > zgsav(km1) ) then ! compare pre- and post-sed values of Zg at next point down
+                if ( zg(km1) > zgsav(km1) .or. (k > 1 .and. zgsav(km1) < 1.e-28) ) then ! compare pre- and post-sed values of Zg at next point down
                                                 ! to see if Zg is increasing by sedimentation, in which case
                                                 ! we replace the value of ng
                  ng(k) = (6./(pi*1000.))**2*consg1*(rho(k)*rg(k))**2/(rho(k)*zg(k))
